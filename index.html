@@ -528,7 +528,7 @@ kbd{font-family:var(--mono);font-size:11px;color:var(--faint);border:1px solid v
           </div>
         </div>
         <div class="err" id="err" role="alert"></div>
-        <p class="hint">Keyword matching against my resume and projects, not AI. The role is detected and the score updates as you paste or type. A skill used in a project counts as a full point; a certificate, course or practice counts as half.</p>
+        <p class="hint">Keyword matching against my resume and projects, not AI. Press Enter to check (Shift + Enter for a new line). The role is detected from the description. A skill used in a project counts as a full point; a certificate, course or practice counts as half.</p>
         <div class="out card" id="out" aria-live="polite"></div>
       </section>
 
@@ -778,12 +778,10 @@ kbd{font-family:var(--mono);font-size:11px;color:var(--faint);border:1px solid v
     draw(detected ? detected.t + ' role' : 'Your job description', found, true, detected ? 'Detected from your job description' : 'No specific role detected, so this checks every skill mentioned');
   }
   $('#send').addEventListener('click', function(){ check(false); });
-  jd.addEventListener('keydown', function(e){ if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)){ e.preventDefault(); check(false); } });
-  var liveT;
+  /* Enter checks the fit; Shift + Enter adds a new line */
+  jd.addEventListener('keydown', function(e){ if (e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); check(false); } });
   jd.addEventListener('input', function(){
     err.textContent = ''; jd.style.height = 'auto'; jd.style.height = Math.min(jd.scrollHeight, 280) + 'px';
-    clearTimeout(liveT);
-    liveT = setTimeout(function(){ check(true); }, 350);
   });
   drawRoles();
 
