@@ -202,6 +202,25 @@ kbd{font-family:var(--mono);font-size:11px;color:var(--faint);border:1px solid v
 .req a{color:var(--text);border-bottom:1px solid var(--line-2)}
 .req .tag2{font-size:12px;color:var(--faint);white-space:nowrap;padding-top:2px}
 .out .empty{padding:14px 18px;color:var(--muted);font-size:14px}
+.score{display:flex;align-items:center;gap:20px;padding:20px 18px;border-bottom:1px solid var(--line)}
+.ring{position:relative;width:88px;height:88px;flex:none}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:3}
+.ring-bg{stroke:var(--line-2)}
+.ring-fg{stroke:var(--accent);stroke-linecap:round;transition:stroke-dasharray .9s var(--ease)}
+.ring-num{position:absolute;inset:0;display:flex;align-items:baseline;justify-content:center;padding-top:28px;gap:1px}
+.ring-num b{font-size:26px;font-weight:600;letter-spacing:-.03em;line-height:1}
+.ring-num small{font-size:11px;color:var(--faint)}
+.score-text{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0}
+.score-text > b{font-size:17px;font-weight:600;letter-spacing:-.01em}
+.verdict{font-size:12px;font-weight:600;line-height:20px;padding:0 9px;border-radius:999px}
+.v-good{background:color-mix(in srgb,var(--green) 16%,transparent);color:var(--green)}
+.v-ok{background:var(--hover);color:var(--text)}
+.v-low{background:color-mix(in srgb,var(--amber) 16%,transparent);color:var(--amber)}
+.score-split{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;color:var(--muted);margin-top:2px}
+.score-split span{display:inline-flex;align-items:center;gap:6px}
+.score-split .d{display:inline-block;width:7px;height:7px;border-radius:50%;margin:0}
+@media(max-width:480px){.score{gap:14px;padding:16px}.ring{width:72px;height:72px}.ring-num{padding-top:22px}.ring-num b{font-size:21px}}
 
 /* contact */
 .contact-rows a,.contact-rows button{display:flex;align-items:center;gap:14px;width:100%;padding:14px 18px;border:0;border-top:1px solid var(--line);background:transparent;text-align:left;cursor:pointer;font-size:14.5px}
@@ -508,7 +527,7 @@ kbd{font-family:var(--mono);font-size:11px;color:var(--faint);border:1px solid v
           </div>
         </div>
         <div class="err" id="err" role="alert"></div>
-        <p class="hint">Keyword matching against my resume and projects, not AI. Press Ctrl + Enter to check.</p>
+        <p class="hint">Keyword matching against my resume and projects, not AI. The score counts a skill used in a project as a full point and a certificate, course or practice as half. Press Ctrl + Enter to check.</p>
         <div class="out card" id="out" aria-live="polite"></div>
       </section>
 
@@ -684,14 +703,31 @@ kbd{font-family:var(--mono);font-size:11px;color:var(--faint);border:1px solid v
     var rank = {y:0, m:1, n:2}, list = keys.slice();
     if (sort) list.sort(function(a, b){ return rank[REQ[a].v] - rank[REQ[b].v]; });
     var yes = list.filter(function(k){ return REQ[k].v === 'y'; }).length;
-    var html = '<div class="out-head"><b>' + esc(title) + '</b><span>' + yes + ' of ' + list.length + ' shown in project work</span></div>';
-    if (!list.length) html += '<div class="empty">No skills I recognise in that text. Try pasting the requirements part of the post.</div>';
+    var mid = list.filter(function(k){ return REQ[k].v === 'm'; }).length;
+    var no = list.length - yes - mid;
+    var html;
+    if (!list.length){
+      html = '<div class="out-head"><b>' + esc(title) + '</b></div><div class="empty">No skills I recognise in that text. Try pasting the requirements part of the post.</div>';
+    } else {
+      var score = Math.round((yes + mid * 0.5) / list.length * 100);
+      var verdict = score >= 75 ? ['Strong match', 'v-good'] : score >= 50 ? ['Good match', 'v-ok'] : score >= 30 ? ['Partial match', 'v-ok'] : ['Early match', 'v-low'];
+      html = '<div class="score">'
+        + '<div class="ring" role="img" aria-label="Match score ' + score + ' out of 100">'
+        + '<svg viewBox="0 0 36 36" aria-hidden="true"><circle class="ring-bg" cx="18" cy="18" r="15.915"/><circle class="ring-fg" cx="18" cy="18" r="15.915" stroke-dasharray="0 100" data-p="' + score + '"/></svg>'
+        + '<span class="ring-num"><b>' + score + '</b><small>/100</small></span></div>'
+        + '<div class="score-text"><span class="verdict ' + verdict[1] + '">' + verdict[0] + '</span>'
+        + '<b>' + esc(title) + '</b>'
+        + '<div class="score-split"><span><i class="d y"></i>' + yes + ' in my projects</span><span><i class="d m"></i>' + mid + ' partly</span><span><i class="d n"></i>' + no + ' not yet</span></div>'
+        + '</div></div>';
+    }
     html += list.map(function(k){
       var q = REQ[k], tag = q.v === 'y' ? 'In a project' : q.v === 'n' ? 'Not yet' : q.b;
       var link = q.h ? ' <a href="#/' + q.h + '">' + esc(q.s) + '</a>' : q.x ? ' <a href="' + q.x + '" target="_blank" rel="noopener">' + esc(q.s) + '</a>' : '';
       return '<div class="req"><span class="d ' + q.v + '" aria-hidden="true"></span><div><b>' + esc(q.l) + '</b><p>' + esc(q.p || "I haven't used this in a project yet.") + link + '</p></div><span class="tag2">' + esc(tag) + '</span></div>';
     }).join('');
     out.innerHTML = html;
+    var fg = out.querySelector('.ring-fg');
+    if (fg) setTimeout(function(){ fg.setAttribute('stroke-dasharray', fg.dataset.p + ' 100'); }, 30);
   }
   function pickRole(id){
     var r = ROLES.filter(function(x){ return x.id === id; })[0]; if (!r) return;
