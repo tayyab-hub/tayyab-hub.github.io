@@ -217,6 +217,7 @@ kbd{font-family:var(--mono);font-size:11px;color:var(--faint);border:1px solid v
 .v-good{background:color-mix(in srgb,var(--green) 16%,transparent);color:var(--green)}
 .v-ok{background:var(--hover);color:var(--text)}
 .v-low{background:color-mix(in srgb,var(--amber) 16%,transparent);color:var(--amber)}
+.score-sub{font-size:12.5px;color:var(--faint);margin-top:-2px}
 .score-split{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;color:var(--muted);margin-top:2px}
 .score-split span{display:inline-flex;align-items:center;gap:6px}
 .score-split .d{display:inline-block;width:7px;height:7px;border-radius:50%;margin:0}
@@ -527,7 +528,7 @@ kbd{font-family:var(--mono);font-size:11px;color:var(--faint);border:1px solid v
           </div>
         </div>
         <div class="err" id="err" role="alert"></div>
-        <p class="hint">Keyword matching against my resume and projects, not AI. The score counts a skill used in a project as a full point and a certificate, course or practice as half. Press Ctrl + Enter to check.</p>
+        <p class="hint">Keyword matching against my resume and projects, not AI. The role is detected and the score updates as you paste or type. A skill used in a project counts as a full point; a certificate, course or practice counts as half.</p>
         <div class="out card" id="out" aria-live="polite"></div>
       </section>
 
@@ -665,7 +666,7 @@ kbd{font-family:var(--mono);font-size:11px;color:var(--faint);border:1px solid v
   var cur = null, jd = $('#jd'), err = $('#err'), out = $('#out');
   function drawRoles(){
     var r = cur && ROLES.filter(function(x){ return x.id === cur; })[0];
-    $$('.rp-label').forEach(function(el){ el.textContent = r ? r.t : 'Choose a role'; });
+    $$('.rp-label').forEach(function(el){ el.textContent = r ? r.t : detected ? 'Detected: ' + detected.t : 'Choose a role'; });
     $$('.rp-pop').forEach(function(pop){
       pop.innerHTML = GROUPS.map(function(g){
         return '<div class="rp-g" role="group" aria-label="' + g + '"><h3>' + g + '</h3>' + ROLES.filter(function(x){ return x.g === g; }).map(function(x){
@@ -699,7 +700,7 @@ kbd{font-family:var(--mono);font-size:11px;color:var(--faint);border:1px solid v
     var o = document.querySelector('[data-rp].open'); if (o){ closeRp(); o.querySelector('.rp-btn').focus(); }
   });
   window.addEventListener('hashchange', closeRp);
-  function draw(title, keys, sort){
+  function draw(title, keys, sort, sub){
     var rank = {y:0, m:1, n:2}, list = keys.slice();
     if (sort) list.sort(function(a, b){ return rank[REQ[a].v] - rank[REQ[b].v]; });
     var yes = list.filter(function(k){ return REQ[k].v === 'y'; }).length;
@@ -717,6 +718,7 @@ kbd{font-family:var(--mono);font-size:11px;color:var(--faint);border:1px solid v
         + '<span class="ring-num"><b>' + score + '</b><small>/100</small></span></div>'
         + '<div class="score-text"><span class="verdict ' + verdict[1] + '">' + verdict[0] + '</span>'
         + '<b>' + esc(title) + '</b>'
+        + (sub ? '<small class="score-sub">' + esc(sub) + '</small>' : '')
         + '<div class="score-split"><span><i class="d y"></i>' + yes + ' in my projects</span><span><i class="d m"></i>' + mid + ' partly</span><span><i class="d n"></i>' + no + ' not yet</span></div>'
         + '</div></div>';
     }
@@ -734,16 +736,55 @@ kbd{font-family:var(--mono);font-size:11px;color:var(--faint);border:1px solid v
     cur = id; drawRoles(); err.textContent = ''; draw(r.t + ' intern', r.k, false);
   }
   function escRe(t){ return t.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&'); }
-  function check(){
-    var text = jd.value.toLowerCase();
-    if (!text.trim()){ err.textContent = 'Paste a job description first, or pick a role.'; jd.focus(); return; }
-    err.textContent = ''; cur = null; drawRoles();
-    var found = Object.keys(REQ).filter(function(k){ return REQ[k].k.some(function(w){ return new RegExp('(^|[^a-z0-9])' + escRe(w) + '($|[^a-z0-9+#])').test(text); }); });
-    draw('Your job description', found, true);
+  /* guess the role from the job title words, most specific first */
+  var ROLE_HINTS = [
+    ['mle', /machine learning|ml engineer|\bai engineer|deep learning engineer/],
+    ['datasci', /data scien/],
+    ['data', /data analy|business analy|business intelligence|\bbi (analyst|developer)|reporting analyst/],
+    ['dbdev', /database (developer|engineer|administrator)|\bdba\b|sql developer/],
+    ['security', /cyber ?security|security (analyst|engineer|intern)|soc analyst|penetration test|information security|infosec/],
+    ['cloud', /devops|cloud (engineer|intern)|site reliability|\bsre\b|platform engineer|infrastructure engineer/],
+    ['itsupport', /it support|help ?desk|technical support|service desk|desktop support/],
+    ['mobile', /mobile (app )?(developer|engineer|intern)|android (developer|engineer)|ios (developer|engineer)|flutter developer|react native/],
+    ['qa', /\bqa\b|quality assurance|test(ing)? engineer|software tester|\bsdet\b|automation test/],
+    ['fullstack', /full[- ]?stack/],
+    ['frontend', /front[- ]?end|ui developer/],
+    ['backend', /back[- ]?end|api developer|server[- ]side/],
+    ['web', /web developer|wordpress|php developer/],
+    ['software', /software (engineer|developer|engineering)|programmer|developer intern|software intern/]
+  ];
+  var detected = null;
+  function detectRole(text, found){
+    for (var i = 0; i < ROLE_HINTS.length; i++){
+      if (ROLE_HINTS[i][1].test(text)) return ROLES.filter(function(x){ return x.id === ROLE_HINTS[i][0]; })[0];
+    }
+    var best = null, bestN = 1;
+    ROLES.forEach(function(r){
+      var n = r.k.filter(function(k){ return found.indexOf(k) > -1; }).length;
+      if (n > bestN){ best = r; bestN = n; }
+    });
+    return best;
   }
-  $('#send').addEventListener('click', check);
-  jd.addEventListener('keydown', function(e){ if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)){ e.preventDefault(); check(); } });
-  jd.addEventListener('input', function(){ err.textContent = ''; jd.style.height = 'auto'; jd.style.height = Math.min(jd.scrollHeight, 280) + 'px'; });
+  function check(silent){
+    var text = jd.value.toLowerCase();
+    if (!text.trim()){
+      if (silent === true){ detected = null; if (!cur){ out.innerHTML = ''; } drawRoles(); return; }
+      err.textContent = 'Paste a job description first, or pick a role.'; jd.focus(); return;
+    }
+    err.textContent = ''; cur = null;
+    var found = Object.keys(REQ).filter(function(k){ return REQ[k].k.some(function(w){ return new RegExp('(^|[^a-z0-9])' + escRe(w) + '($|[^a-z0-9+#])').test(text); }); });
+    detected = detectRole(text, found);
+    drawRoles();
+    draw(detected ? detected.t + ' role' : 'Your job description', found, true, detected ? 'Detected from your job description' : 'No specific role detected, so this checks every skill mentioned');
+  }
+  $('#send').addEventListener('click', function(){ check(false); });
+  jd.addEventListener('keydown', function(e){ if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)){ e.preventDefault(); check(false); } });
+  var liveT;
+  jd.addEventListener('input', function(){
+    err.textContent = ''; jd.style.height = 'auto'; jd.style.height = Math.min(jd.scrollHeight, 280) + 'px';
+    clearTimeout(liveT);
+    liveT = setTimeout(function(){ check(true); }, 350);
+  });
   drawRoles();
 
   /* search palette */
